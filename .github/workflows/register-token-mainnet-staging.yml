@@ -1,0 +1,61 @@
+name: Register Token With Fee Vault (Mainnet Staging)
+
+# Manual recovery tool for a token whose registerToken call failed after it
+# was deployed (see scripts/register-token.mjs).
+on:
+  workflow_dispatch:
+    inputs:
+      token_address:
+        description: 'Already-deployed token address to register'
+        required: true
+      pool_id:
+        description: 'bytes32 Doppler pool id for this token'
+        required: true
+      initializer:
+        description: 'dopplerHookInitializer address (NOT rehypeDopplerHookInitializer)'
+        required: true
+      curator:
+        description: 'Curator wallet (leave blank for none — protocol takes 100%)'
+        required: false
+        default: '0x0000000000000000000000000000000000000000'
+
+# This workflow never uses this repo's own GITHUB_TOKEN.
+permissions: {}
+
+jobs:
+  register:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout scripts (private repo, staging branch)
+        uses: actions/checkout@v4
+        with:
+          repository: SentysisLab/Sentysis-Web-App
+          ref: staging
+          ssh-key: ${{ secrets.WEB_APP_DEPLOY_KEY }}
+          persist-credentials: false
+          sparse-checkout: scripts
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: scripts/package.json
+
+      - name: Install dependencies
+        working-directory: scripts
+        run: npm install
+
+      - name: Register token with SentysisFeeVault (BASE MAINNET)
+        working-directory: scripts
+        env:
+          FEE_VAULT_ADDR: ${{ secrets.MAINNET_STAGING_FEE_VAULT_ADDR }}
+          RPC_URL: ${{ secrets.MAINNET_STAGING_RPC_URL }}
+          OWNER_PRIVATE_KEY: ${{ secrets.STAGING_OWNER_PRIVATE_KEY }}
+          TOKEN_ADDRESS: ${{ inputs.token_address }}
+          POOL_ID: ${{ inputs.pool_id }}
+          INITIALIZER: ${{ inputs.initializer }}
+          CURATOR: ${{ inputs.curator }}
+        run: node register-token.mjs

@@ -1,0 +1,52 @@
+name: Sweep Protocol Trading Fees (Production)
+
+on:
+  # Manual trigger: Actions -> "Sweep Protocol Trading Fees (Production)" -> Run workflow.
+  workflow_dispatch: {}
+  # Uncomment to run daily instead of only on manual trigger.
+  # schedule:
+  #   - cron: '0 0 * * *'  # every day at 00:00 UTC
+
+# This workflow never uses this repo's own GITHUB_TOKEN.
+permissions: {}
+
+# Never run two sweeps in parallel.
+concurrency:
+  group: production-sweep-protocol-fees
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout scripts (private repo, main branch)
+        uses: actions/checkout@v4
+        with:
+          repository: SentysisLab/Sentysis-Web-App
+          ref: main
+          ssh-key: ${{ secrets.WEB_APP_DEPLOY_KEY }}
+          persist-credentials: false
+          sparse-checkout: scripts
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: scripts/package.json
+
+      - name: Install dependencies
+        working-directory: scripts
+        run: npm install
+
+      - name: Sweep protocol fees to Safe (BASE MAINNET)
+        working-directory: scripts
+        env:
+          CHAIN_ID: '8453'
+          FEE_VAULT_ADDR: ${{ secrets.PRODUCTION_FEE_VAULT_ADDR }}
+          RPC_URL: ${{ secrets.PRODUCTION_RPC_URL }}
+          # Permissionless call — this wallet only pays gas.
+          OWNER_PRIVATE_KEY: ${{ secrets.PRODUCTION_OWNER_PRIVATE_KEY }}
+        run: node sweep-protocol-fees-production.mjs

@@ -1,0 +1,75 @@
+name: Launch Graduation Token (Mainnet Staging)
+
+on:
+  # Triggered by staging sync-graduation via workflow_dispatch
+  workflow_dispatch:
+    inputs:
+      count:
+        description: 'Number of pending items'
+        required: false
+        default: '1'
+      market_ids:
+        description: 'Comma-separated market IDs (informational only)'
+        required: false
+
+# This workflow never uses this repo's own GITHUB_TOKEN.
+permissions: {}
+
+# Never run two launches in parallel — prevents double-launching a token
+# when sync-graduation re-dispatches while a run is still in progress.
+concurrency:
+  group: launch-token-mainnet-staging
+  cancel-in-progress: false
+
+jobs:
+  launch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout scripts (private repo, staging branch)
+        uses: actions/checkout@v4
+        with:
+          repository: SentysisLab/Sentysis-Web-App
+          ref: staging
+          ssh-key: ${{ secrets.WEB_APP_DEPLOY_KEY }}
+          persist-credentials: false
+          sparse-checkout: scripts
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: scripts/package.json
+
+      - name: Install dependencies
+        working-directory: scripts
+        run: npm install
+
+      - name: Launch token for graduated narratives (BASE MAINNET)
+        working-directory: scripts
+        env:
+          CHAIN_ID: '8453'
+          SENTYSIS_ADDR: ${{ secrets.MAINNET_STAGING_SENTYSIS_ADDR }}
+          FEE_VAULT_ADDR: ${{ secrets.MAINNET_STAGING_FEE_VAULT_ADDR }}
+          RPC_URL: ${{ secrets.MAINNET_STAGING_RPC_URL }}
+          OWNER_PRIVATE_KEY: ${{ secrets.STAGING_OWNER_PRIVATE_KEY }}
+          SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          PINATA_JWT: ${{ secrets.PINATA_JWT }}
+          # Anti-snipe fee decay: 80% -> 1% over 60s
+          DECAY_START_FEE: '800000'
+          DECAY_DURATION_SECONDS: '60'
+        run: node launch-tokens.mjs
+
+      - name: Release voter allocation (opens airdrop claims)
+        working-directory: scripts
+        env:
+          CHAIN_ID: '8453'
+          SENTYSIS_ADDR: ${{ secrets.MAINNET_STAGING_SENTYSIS_ADDR }}
+          RPC_URL: ${{ secrets.MAINNET_STAGING_RPC_URL }}
+          OWNER_PRIVATE_KEY: ${{ secrets.STAGING_OWNER_PRIVATE_KEY }}
+          SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+        run: node release-tokens.mjs

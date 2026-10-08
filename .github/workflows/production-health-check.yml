@@ -1,0 +1,52 @@
+name: Production Health Check
+
+# Read-only monitoring: fails the workflow if any check breaks. Never writes
+# to the database, never sends a transaction, cannot trigger a token launch.
+
+on:
+  # Scheduled run disabled — uncomment to re-enable the every-15-min check.
+  # schedule:
+  #   - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+# This workflow never uses this repo's own GITHUB_TOKEN.
+permissions: {}
+
+concurrency:
+  group: production-health-check
+  cancel-in-progress: false
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout scripts (private repo, main branch)
+        uses: actions/checkout@v4
+        with:
+          repository: SentysisLab/Sentysis-Web-App
+          ref: main
+          ssh-key: ${{ secrets.WEB_APP_DEPLOY_KEY }}
+          persist-credentials: false
+          sparse-checkout: scripts
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: scripts/package.json
+
+      - name: Install dependencies
+        working-directory: scripts
+        run: npm install
+
+      - name: Run production health checks
+        working-directory: scripts
+        env:
+          SENTYSIS_ADDR: ${{ secrets.PRODUCTION_SENTYSIS_ADDR }}
+          RPC_URL: ${{ secrets.PRODUCTION_RPC_URL }}
+          SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY }}
+        run: node health-check.mjs
