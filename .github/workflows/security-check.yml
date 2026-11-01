@@ -1,0 +1,54 @@
+name: Daily Security Check
+
+# Read-only monitoring (added 2026-11-01, after the Oct 31 attack): calls the
+# security-check edge function on staging and production. A job fails when its
+# project reports findings (or can't be reached), and GitHub emails the repo
+# owner about the failed run. Read the run's log for details.
+# Secret: SECURITY_CHECK_SECRET = the SYNC_GRADUATION_SECRET edge-function
+# secret (same value in both Supabase projects).
+
+on:
+  schedule:
+    - cron: '0 1 * * *' # 01:00 UTC = 09:00 Malaysia
+  workflow_dispatch:
+
+# This workflow never uses this repo's own GITHUB_TOKEN.
+permissions: {}
+
+concurrency:
+  group: security-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: production
+            ref: rchtgckkrgdguqnxmqkr
+          - name: staging
+            ref: tgifjlfuuskzgxeqxgxj
+    name: ${{ matrix.name }}
+    steps:
+      - name: Run security-check
+        env:
+          SECRET: ${{ secrets.SECURITY_CHECK_SECRET }}
+        run: |
+          status=$(curl -s -o result.json -w "%{http_code}" -X POST \
+            "https://${{ matrix.ref }}.supabase.co/functions/v1/security-check" \
+            -H "x-sync-secret: $SECRET")
+          cat result.json
+          echo
+          if [ "$status" != "200" ]; then
+            echo "::error::security-check answered HTTP $status"
+            exit 1
+          fi
+          count=$(jq '.findings | length' result.json)
+          if [ "$count" != "0" ]; then
+            jq -r '.findings[] | "::error title=\(.check)::\(.detail)"' result.json
+            exit 1
+          fi
+          echo "No findings on ${{ matrix.name }}."
